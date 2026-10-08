@@ -1,6 +1,6 @@
 import { Layout, Typography } from 'antd'
 
-import PersonsPage from '@/pages/PersonsPage'
+import FaceExtractPage from '@/pages/FaceExtractPage'
 
 export default function App() {
   return (
@@ -11,7 +11,7 @@ export default function App() {
         </Typography.Title>
       </Layout.Header>
       <Layout.Content style={{ padding: 24, maxWidth: 1100, width: '100%', margin: '0 auto' }}>
-        <PersonsPage />
+        <FaceExtractPage />
       </Layout.Content>
       <Layout.Footer style={{ textAlign: 'center' }}>
         FastAPI · React · Vite · Ant Design · TanStack Query

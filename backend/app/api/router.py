@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
-from app.api.routes import health, persons
+from app.api.routes import faces, health
 
 api_router = APIRouter()
 api_router.include_router(health.router)
-api_router.include_router(persons.router)
+api_router.include_router(faces.router)
