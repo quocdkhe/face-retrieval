@@ -18,6 +18,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import { useState } from 'react'
 
+import CmsSyncModal from '@/components/CmsSyncModal'
 import FaceBoundingBoxOverlay from '@/components/FaceBoundingBoxOverlay'
 import { useDeleteImage, useImageList, useIngestFaces } from '@/hooks/useFaces'
 import type { FaceIngestResponse, ImageRecord } from '@/types/face'
@@ -27,6 +28,7 @@ export default function FaceDatabasePage() {
   const [page, setPage] = useState({ current: 1, pageSize: 10 })
   const [detailRecord, setDetailRecord] = useState<ImageRecord | null>(null)
   const [ingestOpen, setIngestOpen] = useState(false)
+  const [cmsSyncOpen, setCmsSyncOpen] = useState(false)
   const [form] = Form.useForm<{ image_urls: string[] }>()
 
   const { data, isLoading } = useImageList({
@@ -73,8 +75,9 @@ export default function FaceDatabasePage() {
       message.warning('Nhập ít nhất 1 URL ảnh')
       return
     }
+    const items = image_urls.map((image_url) => ({ id: crypto.randomUUID(), image_url }))
     ingestFaces.mutate(
-      { image_urls },
+      { items },
       {
         onSuccess: (result) => {
           setIngestOpen(false)
@@ -159,15 +162,18 @@ export default function FaceDatabasePage() {
         <Typography.Title level={3} style={{ margin: 0 }}>
           Face Database
         </Typography.Title>
-        <Button
-          type="primary"
-          onClick={() => {
-            form.resetFields()
-            setIngestOpen(true)
-          }}
-        >
-          Thêm
-        </Button>
+        <Space>
+          <Button onClick={() => setCmsSyncOpen(true)}>Đồng bộ từ CMS</Button>
+          <Button
+            type="primary"
+            onClick={() => {
+              form.resetFields()
+              setIngestOpen(true)
+            }}
+          >
+            Thêm
+          </Button>
+        </Space>
       </Flex>
 
       <Card>
@@ -276,6 +282,8 @@ export default function FaceDatabasePage() {
           </Form.List>
         </Form>
       </Modal>
+
+      <CmsSyncModal open={cmsSyncOpen} onClose={() => setCmsSyncOpen(false)} />
     </Flex>
   )
 }

@@ -17,11 +17,17 @@ export interface FaceExtractResponse {
   faces: FaceInfo[]
 }
 
+export interface FaceIngestItem {
+  id: string
+  image_url: string
+}
+
 export interface FaceIngestRequest {
-  image_urls: string[]
+  items: FaceIngestItem[]
 }
 
 export interface FaceIngestItemResult {
+  id: string
   image_url: string
   face_count: number
   error: string | null

@@ -21,11 +21,17 @@ class FaceExtractResponse(BaseModel):
     faces: list[FaceInfo]
 
 
+class FaceIngestItem(BaseModel):
+    id: str = Field(..., min_length=1, description="ID ảnh do caller cung cấp (vd: id từ CMS), dùng làm point id trong Qdrant")
+    image_url: str = Field(..., min_length=1)
+
+
 class FaceIngestRequest(BaseModel):
-    image_urls: list[str] = Field(..., min_length=1, description="Danh sách URL ảnh cần trích xuất và lưu")
+    items: list[FaceIngestItem] = Field(..., min_length=1, description="Danh sách ảnh (id + url) cần trích xuất và lưu")
 
 
 class FaceIngestItemResult(BaseModel):
+    id: str
     image_url: str
     face_count: int
     error: str | None = None

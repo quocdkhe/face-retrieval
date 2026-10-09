@@ -23,7 +23,10 @@ class Settings(BaseSettings):
     # Qdrant (vector DB for face embedding index/search)
     QDRANT_HOST: str = "localhost"
     QDRANT_PORT: int = 6333
-    QDRANT_COLLECTION_NAME: str = "faces"
+    # 2 collection quan hệ 1-nhiều: images (1 point/ảnh, không search) và faces
+    # (1 point/khuôn mặt, vector thật dùng để search) — xem MILESTONE_3.md
+    QDRANT_IMAGES_COLLECTION_NAME: str = "images"
+    QDRANT_FACES_COLLECTION_NAME: str = "faces"
 
 
 settings = Settings()

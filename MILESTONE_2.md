@@ -29,12 +29,23 @@ image_url(s) → extract (Milestone 1) → lưu theo ẢNH vào Qdrant → UI xe
 
 ### Endpoints
 
-`POST /api/v1/faces/ingest` — nhận nhiều URL, trích xuất + lưu từng ảnh. Lỗi ở 1 URL (download/decode/400...) không làm hỏng cả batch — ghi vào `error` của item đó và tiếp tục các URL còn lại.
+> **Cập nhật (CMS sync feature):** `image_id` không còn tự sinh (`uuid4`) ở BE —
+> caller phải cung cấp `id` cho từng ảnh (vd: id từ CMS, hoặc `crypto.randomUUID()`
+> tự sinh ở FE cho flow nhập URL thủ công). Ingest lại cùng `id` sẽ ghi đè (xoá
+> faces cũ rồi ghi faces mới), không tạo record trùng — phục vụ việc đồng bộ lại
+> dữ liệu từ CMS nhiều lần.
+
+`POST /api/v1/faces/ingest` — nhận nhiều `{id, image_url}`, trích xuất + lưu từng ảnh theo đúng `id`. Lỗi ở 1 item (download/decode/400/id không hợp lệ...) không làm hỏng cả batch — ghi vào `error` của item đó và tiếp tục các item còn lại.
 
 Request:
 
 ```json
-{ "image_urls": ["https://example.com/a.jpg", "https://example.com/b.jpg"] }
+{
+  "items": [
+    { "id": "3380193", "image_url": "https://example.com/a.jpg" },
+    { "id": "3380194", "image_url": "https://example.com/b.jpg" }
+  ]
+}
 ```
 
 Response:
@@ -42,8 +53,8 @@ Response:
 ```json
 {
   "results": [
-    { "image_url": "https://example.com/a.jpg", "face_count": 3, "error": null },
-    { "image_url": "https://example.com/b.jpg", "face_count": 0, "error": "Tải ảnh thất bại, HTTP status 404" }
+    { "id": "3380193", "image_url": "https://example.com/a.jpg", "face_count": 3, "error": null },
+    { "id": "3380194", "image_url": "https://example.com/b.jpg", "face_count": 0, "error": "Tải ảnh thất bại, HTTP status 404" }
   ],
   "total_faces_added": 3
 }
@@ -75,7 +86,7 @@ Response:
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/faces/ingest \
   -H "Content-Type: application/json" \
-  -d '{"image_urls": ["https://example.com/photo.jpg"]}'
+  -d '{"items": [{"id": "3380193", "image_url": "https://example.com/photo.jpg"}]}'
 
 curl http://127.0.0.1:8000/api/v1/faces
 

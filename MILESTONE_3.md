@@ -1,6 +1,9 @@
 # Milestone 3 — Face Search (thiết kế schema)
 
-> Trạng thái: **thiết kế, chưa code.** File này ghi lại quyết định đổi schema Qdrant trước khi triển khai search theo vector khuôn mặt.
+> Trạng thái: **tạm dừng ở đây.** Đã refactor storage sang 2 collection + đổi
+> ingest sang `id` do caller cung cấp + thêm luồng đồng bộ ảnh từ CMS (phần
+> dưới). Search theo vector (`search_faces`, endpoint, UI) **chưa code** — sẽ
+> làm ở bước tiếp theo khi quay lại milestone này.
 
 Mục tiêu: search được "ảnh nào trong database chứa khuôn mặt giống với khuôn mặt query" — nền tảng cần thiết là mỗi khuôn mặt phải có vector riêng để Qdrant search, chứ không chỉ 1 vector đại diện cho cả ảnh như Milestone 2.
 
@@ -48,8 +51,35 @@ Bảng `faces` (collection `faces`, point = 1 khuôn mặt — vector là embedd
 4. **Không trùng lặp dữ liệu ảnh.** `image_url`/kích thước chỉ lưu 1 lần ở `images`, không lặp lại trên từng point `faces` như cách denormalize đã cân nhắc trước đó — đổi lại phải trả giá 2 round-trip (search `faces` rồi retrieve `images`) vì Qdrant không có JOIN, nhưng đây là chi phí hợp lý cho một DB vector-only.
 5. **Xoá/toàn vẹn dữ liệu rõ ràng hơn.** Xoá 1 ảnh = xoá 1 point ở `images` + xoá toàn bộ point ở `faces` có `image_id` khớp (filter-delete) — tương đương cascade delete, rõ ràng hơn so với sửa 1 payload lồng.
 
-## Việc cần làm khi triển khai (chưa code trong milestone này)
+## Việc đã triển khai (phần storage)
 
-- Thêm keyword index trên `faces.image_id` để filter nhanh.
-- Migrate: dữ liệu cũ trong collection `faces` (schema Milestone 2) không khôi phục được embedding mặt 2+ → cần **ingest lại** toàn bộ ảnh cũ sau khi đổi schema, không có đường migrate tự động.
-- Đổi `qdrant_service.py`: `upsert_image()` tách thành ghi 2 collection (`images` + `faces`); `delete_image()` cascade xoá theo `image_id`; thêm `search_faces(vector, top_k)` dùng cho search.
+- `backend/app/core/config.py`: thay `QDRANT_COLLECTION_NAME` bằng `QDRANT_IMAGES_COLLECTION_NAME` (mặc định `images`) và `QDRANT_FACES_COLLECTION_NAME` (mặc định `faces`).
+- `backend/app/services/qdrant_service.py`:
+  - `ensure_collections(face_vector_size)` tạo lazy cả 2 collection; `images` dùng vector giả 1 chiều (không search); `faces` dùng dimension embedding thật, có keyword index trên `image_id`.
+  - `upsert_image()` ghi 1 point vào `images` (metadata ảnh) + N point vào `faces` (mỗi khuôn mặt 1 vector thật, payload có `image_id` + `bbox`/`det_score`).
+  - `list_images()` scroll `images` rồi "join" app-side: filter `faces` theo `image_id` của từng trang để gắn lại `faces: [{bbox, det_score}]` — API response giữ nguyên hình dạng cũ (`ImageRecord`), FE không cần đổi.
+  - `delete_image()` cascade: xoá point ở `images` + filter-delete toàn bộ point ở `faces` có `image_id` khớp.
+- Đã xoá collection `faces` cũ (schema Milestone 2, point=ảnh) trên Qdrant dev local — không migrate được, đã verify bằng ingest lại 2 ảnh fixture (7 khuôn mặt) + list + cascade delete qua API thật.
+- Đã verify: `images` points_count và `faces` points_count tách đúng, `GET /faces` trả đúng cấu trúc cũ.
+
+## Việc đã triển khai (đồng bộ ảnh từ CMS)
+
+Cần sync dữ liệu ảnh từ 1 hệ thống CMS ngoài, mỗi ảnh phải giữ đúng `id` của CMS
+trong Qdrant (để sync lại không tạo record trùng) → đổi ingest từ tự sinh
+`image_id` sang nhận `id` bắt buộc từ caller:
+
+- `backend/app/schemas/face.py`: `FaceIngestRequest.items: [{id, image_url}]` (`id` bắt buộc) thay cho `image_urls: string[]` cũ.
+- `backend/app/services/qdrant_service.py`:
+  - `_to_point_id(image_id)`: ép `id` về `int` (nếu toàn số, như id CMS) hoặc UUID hợp lệ — 2 dạng duy nhất Qdrant chấp nhận làm point id.
+  - `upsert_image(image_id, ...)` giờ xoá face cũ theo `image_id` trước khi ghi mới, nên re-sync cùng `id` nhiều lần (ảnh đổi nội dung/khuôn mặt) ghi đè đúng, không tích lũy face rác.
+- `backend/app/api/routes/faces.py`: `ingest_faces` lặp theo `item.id`; `id` không hợp lệ cho Qdrant trả `error` per-item (không hỏng cả batch) thay vì 500.
+- Frontend:
+  - `frontend/src/api/cms.ts`, `types/cms.ts`: gọi trực tiếp URL CMS bằng axios thuần (không qua `http` instance của app) kèm `Authorization: Bearer <token>`.
+  - `frontend/src/components/CmsSyncModal.tsx`: modal nhập URL CMS (mặc định `https://api-cms.dantri.dev/photos?limit=60&page=1`, sửa page/limit ngay trong URL) + Bearer token bắt buộc. Bấm "Crawl & Đồng bộ" → crawl CMS (Alert loading/success/error) → lần lượt gọi `/faces/ingest` cho từng ảnh theo đúng `id` CMS → bảng tiến trình live từng ảnh (chờ/đang embed/thành công kèm số mặt/lỗi) + progress bar. Khoá đóng modal khi đang chạy.
+  - `frontend/src/pages/FaceDatabasePage.tsx`: thêm nút "Đồng bộ từ CMS" mở modal trên; modal "Thêm" thủ công (dán URL tay) tự sinh `id` bằng `crypto.randomUUID()` client-side để tương thích contract mới.
+- Rủi ro đã biết: crawl CMS gọi trực tiếp từ browser có thể bị **CORS** chặn nếu domain CMS không cho phép origin của FE — nếu gặp, cần đổi sang proxy crawl qua BE.
+
+## Còn lại (chưa code)
+
+- `search_faces(vector, top_k)` ở `qdrant_service.py` + endpoint search theo khuôn mặt query (search `faces` rồi `retrieve(images, ids=...)` để lấy `image_url`/kích thước).
+- FE: trang/luồng upload ảnh query + hiển thị kết quả search.

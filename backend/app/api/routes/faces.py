@@ -125,26 +125,32 @@ def ingest_faces(payload: FaceIngestRequest) -> FaceIngestResponse:
     results: list[FaceIngestItemResult] = []
     total_faces_added = 0
 
-    for image_url in payload.image_urls:
+    for item in payload.items:
         try:
-            faces, image_width, image_height = _extract_faces_from_url(image_url)
+            faces, image_width, image_height = _extract_faces_from_url(item.image_url)
         except HTTPException as exc:
-            results.append(FaceIngestItemResult(image_url=image_url, face_count=0, error=exc.detail))
+            results.append(
+                FaceIngestItemResult(id=item.id, image_url=item.image_url, face_count=0, error=exc.detail)
+            )
             continue
 
         if faces:
-            # Qdrant point cần đúng 1 vector; dùng embedding của mặt đầu tiên làm đại
-            # diện lưu trữ (chưa phục vụ search ở milestone này).
-            qdrant_service.ensure_collection(len(faces[0]["embedding"]))
-            qdrant_service.upsert_image(
-                vector=faces[0]["embedding"],
-                image_url=image_url,
-                image_width=image_width,
-                image_height=image_height,
-                faces=faces,
-            )
+            try:
+                qdrant_service.ensure_collections(len(faces[0]["embedding"]))
+                qdrant_service.upsert_image(
+                    image_id=item.id,
+                    image_url=item.image_url,
+                    image_width=image_width,
+                    image_height=image_height,
+                    faces=faces,
+                )
+            except ValueError as exc:
+                results.append(
+                    FaceIngestItemResult(id=item.id, image_url=item.image_url, face_count=0, error=str(exc))
+                )
+                continue
 
-        results.append(FaceIngestItemResult(image_url=image_url, face_count=len(faces)))
+        results.append(FaceIngestItemResult(id=item.id, image_url=item.image_url, face_count=len(faces)))
         total_faces_added += len(faces)
 
     return FaceIngestResponse(results=results, total_faces_added=total_faces_added)
@@ -158,6 +164,9 @@ def list_images(limit: int = 20, offset: int = 0) -> ImageListResponse:
 
 @router.delete("/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_image(image_id: str) -> None:
-    deleted = qdrant_service.delete_image(image_id)
+    try:
+        deleted = qdrant_service.delete_image(image_id)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if not deleted:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy ảnh")

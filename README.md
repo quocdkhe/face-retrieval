@@ -68,7 +68,7 @@ docker compose up -d qdrant
 - gRPC: localhost:6334
 - Data lưu ở Docker volume `qdrant_data`, không mất khi container restart.
 
-Cấu hình liên quan (`backend/app/core/config.py`): `QDRANT_HOST`, `QDRANT_PORT`, `QDRANT_COLLECTION_NAME`.
+Cấu hình liên quan (`backend/app/core/config.py`): `QDRANT_HOST`, `QDRANT_PORT`, `QDRANT_IMAGES_COLLECTION_NAME`, `QDRANT_FACES_COLLECTION_NAME`.
 
 ## Frontend layers
 
