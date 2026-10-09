@@ -19,3 +19,38 @@ class FaceExtractResponse(BaseModel):
     image_height: int
     face_count: int
     faces: list[FaceInfo]
+
+
+class FaceIngestRequest(BaseModel):
+    image_urls: list[str] = Field(..., min_length=1, description="Danh sách URL ảnh cần trích xuất và lưu")
+
+
+class FaceIngestItemResult(BaseModel):
+    image_url: str
+    face_count: int
+    error: str | None = None
+
+
+class FaceIngestResponse(BaseModel):
+    results: list[FaceIngestItemResult]
+    total_faces_added: int
+
+
+class StoredFaceInfo(BaseModel):
+    bbox: list[float] = Field(..., min_length=4, max_length=4, description="[x1, y1, x2, y2] theo pixel ảnh gốc")
+    det_score: float
+
+
+class ImageRecord(BaseModel):
+    id: str
+    image_url: str
+    image_width: int
+    image_height: int
+    face_count: int
+    faces: list[StoredFaceInfo]
+    created_at: str
+
+
+class ImageListResponse(BaseModel):
+    items: list[ImageRecord]
+    total: int

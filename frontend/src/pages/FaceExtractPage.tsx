@@ -1,6 +1,7 @@
-import { App, Card, Empty, Flex, Input, Space, Tag, Tooltip, Typography } from 'antd'
+import { App, Card, Empty, Flex, Input, Space, Tag, Typography } from 'antd'
 import { useState } from 'react'
 
+import FaceBoundingBoxOverlay from '@/components/FaceBoundingBoxOverlay'
 import { useExtractFaces } from '@/hooks/useFaces'
 
 export default function FaceExtractPage() {
@@ -56,37 +57,12 @@ export default function FaceExtractPage() {
               </Typography.Text>
             </Space>
 
-            <div style={{ position: 'relative', width: '100%', maxWidth: 720 }}>
-              <img
-                src={data.image_url}
-                alt="preview"
-                style={{ display: 'block', width: '100%', height: 'auto', borderRadius: 4 }}
-              />
-              {data.faces.map((face) => {
-                const [x1, y1, x2, y2] = face.bbox
-                const left = (x1 / data.image_width) * 100
-                const top = (y1 / data.image_height) * 100
-                const width = ((x2 - x1) / data.image_width) * 100
-                const height = ((y2 - y1) / data.image_height) * 100
-                return (
-                  <Tooltip key={face.face_id} title={`det_score: ${face.det_score.toFixed(3)}`}>
-                    <div
-                      style={{
-                        position: 'absolute',
-                        left: `${left}%`,
-                        top: `${top}%`,
-                        width: `${width}%`,
-                        height: `${height}%`,
-                        border: '2px solid #52c41a',
-                        borderRadius: 4,
-                        boxShadow: '0 0 0 1px rgba(0,0,0,0.25)',
-                        cursor: 'pointer',
-                      }}
-                    />
-                  </Tooltip>
-                )
-              })}
-            </div>
+            <FaceBoundingBoxOverlay
+              imageUrl={data.image_url}
+              imageWidth={data.image_width}
+              imageHeight={data.image_height}
+              faces={data.faces.map((f) => ({ id: f.face_id, bbox: f.bbox, det_score: f.det_score }))}
+            />
           </Flex>
         )}
       </Card>

@@ -7,8 +7,18 @@ import numpy as np
 from fastapi import APIRouter, HTTPException, status
 
 from app.core.config import settings
-from app.schemas.face import FaceExtractRequest, FaceExtractResponse, FaceInfo
+from app.schemas.face import (
+    FaceExtractRequest,
+    FaceExtractResponse,
+    FaceIngestItemResult,
+    FaceIngestRequest,
+    FaceIngestResponse,
+    FaceInfo,
+    ImageListResponse,
+    ImageRecord,
+)
 from app.services.face_service import face_service
+from app.services.qdrant_service import qdrant_service
 
 logger = logging.getLogger(__name__)
 
@@ -76,10 +86,10 @@ def _decode_image(image_bytes: bytes) -> np.ndarray:
     return image
 
 
-@router.post("/extract", response_model=FaceExtractResponse)
-def extract_faces(payload: FaceExtractRequest) -> FaceExtractResponse:
-    _validate_url(payload.image_url)
-    image_bytes = _download_image(payload.image_url)
+def _extract_faces_from_url(image_url: str) -> tuple[list[dict], int, int]:
+    """Download → decode → detect/embed. Raises HTTPException on any failure."""
+    _validate_url(image_url)
+    image_bytes = _download_image(image_url)
     image = _decode_image(image_bytes)
 
     try:
@@ -94,6 +104,12 @@ def extract_faces(payload: FaceExtractRequest) -> FaceExtractResponse:
         ) from exc
 
     image_height, image_width = image.shape[:2]
+    return faces, image_width, image_height
+
+
+@router.post("/extract", response_model=FaceExtractResponse)
+def extract_faces(payload: FaceExtractRequest) -> FaceExtractResponse:
+    faces, image_width, image_height = _extract_faces_from_url(payload.image_url)
 
     return FaceExtractResponse(
         image_url=payload.image_url,
@@ -102,3 +118,46 @@ def extract_faces(payload: FaceExtractRequest) -> FaceExtractResponse:
         face_count=len(faces),
         faces=[FaceInfo(**f) for f in faces],
     )
+
+
+@router.post("/ingest", response_model=FaceIngestResponse)
+def ingest_faces(payload: FaceIngestRequest) -> FaceIngestResponse:
+    results: list[FaceIngestItemResult] = []
+    total_faces_added = 0
+
+    for image_url in payload.image_urls:
+        try:
+            faces, image_width, image_height = _extract_faces_from_url(image_url)
+        except HTTPException as exc:
+            results.append(FaceIngestItemResult(image_url=image_url, face_count=0, error=exc.detail))
+            continue
+
+        if faces:
+            # Qdrant point cần đúng 1 vector; dùng embedding của mặt đầu tiên làm đại
+            # diện lưu trữ (chưa phục vụ search ở milestone này).
+            qdrant_service.ensure_collection(len(faces[0]["embedding"]))
+            qdrant_service.upsert_image(
+                vector=faces[0]["embedding"],
+                image_url=image_url,
+                image_width=image_width,
+                image_height=image_height,
+                faces=faces,
+            )
+
+        results.append(FaceIngestItemResult(image_url=image_url, face_count=len(faces)))
+        total_faces_added += len(faces)
+
+    return FaceIngestResponse(results=results, total_faces_added=total_faces_added)
+
+
+@router.get("", response_model=ImageListResponse)
+def list_images(limit: int = 20, offset: int = 0) -> ImageListResponse:
+    items, total = qdrant_service.list_images(limit=limit, offset=offset)
+    return ImageListResponse(items=[ImageRecord(**item) for item in items], total=total)
+
+
+@router.delete("/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_image(image_id: str) -> None:
+    deleted = qdrant_service.delete_image(image_id)
+    if not deleted:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy ảnh")

@@ -4,6 +4,7 @@ import { App as AntdApp, ConfigProvider } from 'antd'
 import viVN from 'antd/locale/vi_VN'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { BrowserRouter } from 'react-router-dom'
 
 import App from '@/App'
 import 'antd/dist/reset.css'
@@ -27,7 +28,9 @@ createRoot(document.getElementById('root')!).render(
         theme={{ token: { colorPrimary: '#1677ff', borderRadius: 8 } }}
       >
         <AntdApp>
-          <App />
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
         </AntdApp>
       </ConfigProvider>
       <ReactQueryDevtools initialIsOpen={false} />

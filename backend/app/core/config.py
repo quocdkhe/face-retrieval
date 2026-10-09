@@ -20,5 +20,10 @@ class Settings(BaseSettings):
     IMAGE_DOWNLOAD_TIMEOUT_SECONDS: float = 10.0
     IMAGE_MAX_BYTES: int = 15 * 1024 * 1024
 
+    # Qdrant (vector DB for face embedding index/search)
+    QDRANT_HOST: str = "localhost"
+    QDRANT_PORT: int = 6333
+    QDRANT_COLLECTION_NAME: str = "faces"
+
 
 settings = Settings()
