@@ -28,5 +28,9 @@ class Settings(BaseSettings):
     QDRANT_IMAGES_COLLECTION_NAME: str = "images"
     QDRANT_FACES_COLLECTION_NAME: str = "faces"
 
+    # Search theo khuôn mặt (GET /faces/{face_id}/search)
+    FACE_SEARCH_MIN_SCORE: float = 0.4
+    FACE_SEARCH_DEFAULT_TOP_K: int = 20
+
 
 settings = Settings()

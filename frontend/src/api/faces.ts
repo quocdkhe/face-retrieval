@@ -4,6 +4,7 @@ import type {
   FaceExtractResponse,
   FaceIngestRequest,
   FaceIngestResponse,
+  FaceSearchResponse,
   ImageListResponse,
 } from '@/types/face'
 
@@ -18,6 +19,10 @@ export const facesApi = {
   },
   ingest: async (payload: FaceIngestRequest): Promise<FaceIngestResponse> => {
     const { data } = await http.post<FaceIngestResponse>('/faces/ingest', payload)
+    return data
+  },
+  searchByFace: async (faceId: string): Promise<FaceSearchResponse> => {
+    const { data } = await http.get<FaceSearchResponse>(`/faces/${faceId}/search`)
     return data
   },
   remove: async (id: string): Promise<void> => {

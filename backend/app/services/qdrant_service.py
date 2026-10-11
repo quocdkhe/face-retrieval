@@ -162,7 +162,11 @@ class QdrantService:
             )
             for point in batch:
                 faces_by_image[point.payload["image_id"]].append(
-                    {"bbox": point.payload["bbox"], "det_score": point.payload["det_score"]}
+                    {
+                        "face_id": str(point.id),
+                        "bbox": point.payload["bbox"],
+                        "det_score": point.payload["det_score"],
+                    }
                 )
             if next_offset is None:
                 break
@@ -214,6 +218,89 @@ class QdrantService:
         )
         self._delete_faces_by_image_id(image_id)
         return True
+
+    def search_similar_faces(
+        self, face_id: str, top_k: int, min_score: float
+    ) -> dict | None:
+        """Tìm các ảnh (khác ảnh nguồn) chứa khuôn mặt giống `face_id`.
+
+        Search trên `faces` bằng vector của chính face đó, group theo `image_id` để
+        mỗi ảnh chỉ xuất hiện 1 lần (với face khớp nhất), rồi "join" app-side với
+        `images` + toàn bộ faces của ảnh để FE vẽ bbox. Ảnh nguồn bị loại bằng
+        filter vì face nguồn luôn tự khớp score 1.0.
+
+        Trả `None` nếu `face_id` không tồn tại.
+        """
+        faces_collection = settings.QDRANT_FACES_COLLECTION_NAME
+        images_collection = settings.QDRANT_IMAGES_COLLECTION_NAME
+        if not self._client.collection_exists(faces_collection):
+            return None
+        try:
+            UUID(face_id)
+        except ValueError:
+            return None
+
+        source = self._client.retrieve(
+            collection_name=faces_collection, ids=[face_id], with_vectors=True
+        )
+        if not source:
+            return None
+        source_image_id = source[0].payload["image_id"]
+        query_face = {
+            "face_id": face_id,
+            "image_id": source_image_id,
+            "bbox": source[0].payload["bbox"],
+            "det_score": source[0].payload["det_score"],
+        }
+
+        result = self._client.query_points_groups(
+            collection_name=faces_collection,
+            query=source[0].vector,
+            group_by="image_id",
+            group_size=1,
+            limit=top_k,
+            score_threshold=min_score,
+            query_filter=qmodels.Filter(
+                must_not=[
+                    qmodels.FieldCondition(
+                        key="image_id", match=qmodels.MatchValue(value=source_image_id)
+                    )
+                ]
+            ),
+            with_payload=True,
+            with_vectors=False,
+        )
+        # Qdrant đã sort group theo score của hit tốt nhất, giảm dần.
+        hits = [(str(g.id), g.hits[0]) for g in result.groups if g.hits]
+        if not hits:
+            return {"query_face": query_face, "items": []}
+
+        image_ids = [image_id for image_id, _ in hits]
+        image_points = self._client.retrieve(
+            collection_name=images_collection,
+            ids=[_to_point_id(image_id) for image_id in image_ids],
+            with_payload=True,
+        )
+        images_by_id = {str(p.id): p for p in image_points}
+        faces_by_image = self._list_faces_by_image_ids(image_ids)
+
+        items = []
+        for image_id, hit in hits:
+            image_point = images_by_id.get(image_id)
+            if image_point is None:  # face mồ côi (image đã bị xoá) - bỏ qua
+                continue
+            items.append(
+                {
+                    "score": hit.score,
+                    "matched_face_id": str(hit.id),
+                    "image": {
+                        "id": image_id,
+                        **image_point.payload,
+                        "faces": faces_by_image.get(image_id, []),
+                    },
+                }
+            )
+        return {"query_face": query_face, "items": items}
 
 
 qdrant_service = QdrantService()

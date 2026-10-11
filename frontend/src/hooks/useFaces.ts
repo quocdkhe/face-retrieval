@@ -15,6 +15,14 @@ export function useImageList(params: { limit: number; offset: number }) {
   })
 }
 
+export function useSearchByFace(faceId: string | null) {
+  return useQuery({
+    queryKey: ['faces', 'search', faceId],
+    queryFn: () => facesApi.searchByFace(faceId as string),
+    enabled: !!faceId,
+  })
+}
+
 export function useIngestFaces() {
   const queryClient = useQueryClient()
   return useMutation({

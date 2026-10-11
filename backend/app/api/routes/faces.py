@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 import cv2
 import httpx
 import numpy as np
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from app.core.config import settings
 from app.schemas.face import (
@@ -14,6 +14,8 @@ from app.schemas.face import (
     FaceIngestRequest,
     FaceIngestResponse,
     FaceInfo,
+    FaceSearchItem,
+    FaceSearchResponse,
     ImageListResponse,
     ImageRecord,
 )
@@ -160,6 +162,19 @@ def ingest_faces(payload: FaceIngestRequest) -> FaceIngestResponse:
 def list_images(limit: int = 20, offset: int = 0) -> ImageListResponse:
     items, total = qdrant_service.list_images(limit=limit, offset=offset)
     return ImageListResponse(items=[ImageRecord(**item) for item in items], total=total)
+
+
+@router.get("/{face_id}/search", response_model=FaceSearchResponse)
+def search_by_face(
+    face_id: str,
+    top_k: int = Query(default=settings.FACE_SEARCH_DEFAULT_TOP_K, ge=1, le=100),
+    min_score: float = Query(default=settings.FACE_SEARCH_MIN_SCORE, ge=-1.0, le=1.0),
+) -> FaceSearchResponse:
+    result = qdrant_service.search_similar_faces(face_id=face_id, top_k=top_k, min_score=min_score)
+    if result is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy khuôn mặt")
+    items = [FaceSearchItem(**item) for item in result["items"]]
+    return FaceSearchResponse(query_face=result["query_face"], items=items, total=len(items))
 
 
 @router.delete("/{image_id}", status_code=status.HTTP_204_NO_CONTENT)

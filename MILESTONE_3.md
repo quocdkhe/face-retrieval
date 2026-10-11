@@ -1,9 +1,8 @@
 # Milestone 3 — Face Search (thiết kế schema)
 
-> Trạng thái: **tạm dừng ở đây.** Đã refactor storage sang 2 collection + đổi
-> ingest sang `id` do caller cung cấp + thêm luồng đồng bộ ảnh từ CMS (phần
-> dưới). Search theo vector (`search_faces`, endpoint, UI) **chưa code** — sẽ
-> làm ở bước tiếp theo khi quay lại milestone này.
+> Trạng thái: đã refactor storage sang 2 collection, ingest theo `id` do caller
+> cung cấp, đồng bộ ảnh từ CMS, và **search theo khuôn mặt** (xem phần cuối).
+> Chưa làm: search bằng ảnh upload mới (query ngoài DB), phân trang kết quả.
 
 Mục tiêu: search được "ảnh nào trong database chứa khuôn mặt giống với khuôn mặt query" — nền tảng cần thiết là mỗi khuôn mặt phải có vector riêng để Qdrant search, chứ không chỉ 1 vector đại diện cho cả ảnh như Milestone 2.
 
@@ -79,7 +78,13 @@ trong Qdrant (để sync lại không tạo record trùng) → đổi ingest t�
   - `frontend/src/pages/FaceDatabasePage.tsx`: thêm nút "Đồng bộ từ CMS" mở modal trên; modal "Thêm" thủ công (dán URL tay) tự sinh `id` bằng `crypto.randomUUID()` client-side để tương thích contract mới.
 - Rủi ro đã biết: crawl CMS gọi trực tiếp từ browser có thể bị **CORS** chặn nếu domain CMS không cho phép origin của FE — nếu gặp, cần đổi sang proxy crawl qua BE.
 
-## Còn lại (chưa code)
+## Việc đã triển khai (search theo khuôn mặt)
 
-- `search_faces(vector, top_k)` ở `qdrant_service.py` + endpoint search theo khuôn mặt query (search `faces` rồi `retrieve(images, ids=...)` để lấy `image_url`/kích thước).
-- FE: trang/luồng upload ảnh query + hiển thị kết quả search.
+Từ drawer chi tiết ảnh, click vào 1 khuôn mặt → FE gửi `face_id` → BE search vector của chính face đó → drawer tầng 2 (nested) hiển thị các ảnh khác chứa người đó.
+
+- `GET /api/v1/faces/{face_id}/search?top_k=20&min_score=0.4` (mặc định lấy từ `FACE_SEARCH_DEFAULT_TOP_K`, `FACE_SEARCH_MIN_SCORE`):
+  - `retrieve` face nguồn (kèm vector) → `query_points_groups` trên `faces`, `group_by=image_id`, `group_size=1` (mỗi ảnh 1 lần, kèm face khớp nhất), filter `must_not image_id == ảnh nguồn` → `retrieve(images)` + gắn toàn bộ faces của ảnh.
+  - Response: `query_face`, `items: [{score, matched_face_id, image: ImageRecord}]`, `total`. Sort theo score giảm dần, không phân trang. `404` nếu `face_id` không tồn tại/không phải UUID.
+- `StoredFaceInfo` thêm `face_id` (point id) — `GET /faces` giờ trả `face_id` cho từng khuôn mặt; dữ liệu cũ không cần migrate.
+- FE: `FaceBoundingBoxOverlay` hỗ trợ `onFaceClick` + `highlightedFaceIds`; `FaceSearchResultDrawer` là drawer lồng trong drawer chi tiết (crop khuôn mặt query, list ảnh kết quả, highlight đúng mặt khớp, tag % giống nhau; có loading/empty/error). Tầng 2 là điểm cuối.
+- Test: `backend/tests/test_face_search.py` (Qdrant thật với collection tạm, tự skip nếu Qdrant không chạy).

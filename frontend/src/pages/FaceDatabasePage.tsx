@@ -20,6 +20,7 @@ import { useState } from 'react'
 
 import CmsSyncModal from '@/components/CmsSyncModal'
 import FaceBoundingBoxOverlay from '@/components/FaceBoundingBoxOverlay'
+import FaceSearchResultDrawer from '@/components/FaceSearchResultDrawer'
 import { useDeleteImage, useImageList, useIngestFaces } from '@/hooks/useFaces'
 import type { FaceIngestResponse, ImageRecord } from '@/types/face'
 
@@ -27,6 +28,7 @@ export default function FaceDatabasePage() {
   const { message, notification } = App.useApp()
   const [page, setPage] = useState({ current: 1, pageSize: 10 })
   const [detailRecord, setDetailRecord] = useState<ImageRecord | null>(null)
+  const [searchFaceId, setSearchFaceId] = useState<string | null>(null)
   const [ingestOpen, setIngestOpen] = useState(false)
   const [cmsSyncOpen, setCmsSyncOpen] = useState(false)
   const [form] = Form.useForm<{ image_urls: string[] }>()
@@ -196,7 +198,10 @@ export default function FaceDatabasePage() {
         title="Chi tiết ảnh"
         width={720}
         open={!!detailRecord}
-        onClose={() => setDetailRecord(null)}
+        onClose={() => {
+          setSearchFaceId(null)
+          setDetailRecord(null)
+        }}
         destroyOnHidden
       >
         {detailRecord && (
@@ -214,12 +219,15 @@ export default function FaceDatabasePage() {
               imageUrl={detailRecord.image_url}
               imageWidth={detailRecord.image_width}
               imageHeight={detailRecord.image_height}
-              faces={detailRecord.faces.map((f, idx) => ({
-                id: idx,
+              faces={detailRecord.faces.map((f) => ({
+                id: f.face_id,
                 bbox: f.bbox,
                 det_score: f.det_score,
               }))}
               maxWidth={680}
+              onFaceClick={(face) => setSearchFaceId(String(face.id))}
+              tooltipHint="Click để tìm ảnh chứa người này"
+              highlightedFaceIds={searchFaceId ? [searchFaceId] : undefined}
             />
 
             <Flex vertical gap={4}>
@@ -233,6 +241,12 @@ export default function FaceDatabasePage() {
                 </a>
               </Typography.Text>
             </Flex>
+
+            <FaceSearchResultDrawer
+              sourceImage={detailRecord}
+              faceId={searchFaceId}
+              onClose={() => setSearchFaceId(null)}
+            />
           </Flex>
         )}
       </Drawer>

@@ -43,6 +43,7 @@ class FaceIngestResponse(BaseModel):
 
 
 class StoredFaceInfo(BaseModel):
+    face_id: str = Field(..., description="Point id của khuôn mặt trong collection faces")
     bbox: list[float] = Field(..., min_length=4, max_length=4, description="[x1, y1, x2, y2] theo pixel ảnh gốc")
     det_score: float
 
@@ -59,4 +60,23 @@ class ImageRecord(BaseModel):
 
 class ImageListResponse(BaseModel):
     items: list[ImageRecord]
+    total: int
+
+
+class QueryFaceInfo(BaseModel):
+    face_id: str
+    image_id: str
+    bbox: list[float] = Field(..., min_length=4, max_length=4)
+    det_score: float
+
+
+class FaceSearchItem(BaseModel):
+    score: float = Field(..., description="Cosine similarity giữa khuôn mặt query và khuôn mặt khớp nhất trong ảnh")
+    matched_face_id: str
+    image: ImageRecord
+
+
+class FaceSearchResponse(BaseModel):
+    query_face: QueryFaceInfo
+    items: list[FaceSearchItem]
     total: int

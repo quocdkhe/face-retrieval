@@ -39,6 +39,7 @@ export interface FaceIngestResponse {
 }
 
 export interface StoredFaceInfo {
+  face_id: string
   bbox: [number, number, number, number]
   det_score: number
 }
@@ -55,5 +56,24 @@ export interface ImageRecord {
 
 export interface ImageListResponse {
   items: ImageRecord[]
+  total: number
+}
+
+export interface QueryFaceInfo {
+  face_id: string
+  image_id: string
+  bbox: [number, number, number, number]
+  det_score: number
+}
+
+export interface FaceSearchItem {
+  score: number
+  matched_face_id: string
+  image: ImageRecord
+}
+
+export interface FaceSearchResponse {
+  query_face: QueryFaceInfo
+  items: FaceSearchItem[]
   total: number
 }
