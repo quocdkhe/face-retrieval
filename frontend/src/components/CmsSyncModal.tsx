@@ -137,7 +137,7 @@ export default function CmsSyncModal({ open, onClose }: CmsSyncModalProps) {
       <Flex vertical gap={12}>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
           Crawl danh sách ảnh từ CMS, sau đó trích xuất khuôn mặt + lưu vào Qdrant theo đúng{' '}
-          <code>id</code> của CMS (đồng bộ lại nhiều lần với cùng ảnh sẽ ghi đè, không bị trùng).
+          <code>id</code> của CMS (đồng bộ lại nhiều lần với cùng ảnh sẽ ghi đè, không bị trùng). Ảnh không có khuôn mặt vẫn được lưu.
         </Typography.Paragraph>
 
         <Flex vertical gap={4}>

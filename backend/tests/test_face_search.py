@@ -38,7 +38,7 @@ def isolated_collections():
     originals = (settings.QDRANT_IMAGES_COLLECTION_NAME, settings.QDRANT_FACES_COLLECTION_NAME)
     settings.QDRANT_IMAGES_COLLECTION_NAME = f"test_images_{suffix}"
     settings.QDRANT_FACES_COLLECTION_NAME = f"test_faces_{suffix}"
-    qdrant_service._collections_ready = False
+    qdrant_service._images_ready = qdrant_service._faces_ready = False
     try:
         qdrant_service._client.get_collections()
     except Exception:
@@ -48,7 +48,7 @@ def isolated_collections():
     for name in (settings.QDRANT_IMAGES_COLLECTION_NAME, settings.QDRANT_FACES_COLLECTION_NAME):
         qdrant_service._client.delete_collection(name)
     settings.QDRANT_IMAGES_COLLECTION_NAME, settings.QDRANT_FACES_COLLECTION_NAME = originals
-    qdrant_service._collections_ready = False
+    qdrant_service._images_ready = qdrant_service._faces_ready = False
 
 
 @pytest.fixture(scope="module")
@@ -115,3 +115,26 @@ def test_search_unknown_face_returns_404(client, seeded):
 def test_search_invalid_face_id_returns_404(client, seeded):
     resp = client.get(f"{LIST_URL}/not-a-uuid/search")
     assert resp.status_code == 404
+
+
+def test_ingest_saves_image_without_faces(client, isolated_collections, monkeypatch):
+    import cv2
+    import numpy as np
+
+    ok, buf = cv2.imencode(".jpg", np.full((200, 200, 3), 127, dtype=np.uint8))
+    assert ok
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResponse(buf.tobytes()))
+    image_id = "44444444-0000-0000-0000-000000000004"
+
+    resp = client.post(
+        INGEST_URL, json={"items": [{"id": image_id, "image_url": "https://example.com/blank.jpg"}]}
+    )
+
+    assert resp.status_code == 200
+    result = resp.json()["results"][0]
+    assert result["error"] is None
+    assert result["face_count"] == 0
+    items = client.get(LIST_URL, params={"limit": 50}).json()["items"]
+    record = next(i for i in items if i["id"] == image_id)
+    assert record["face_count"] == 0
+    assert record["faces"] == []

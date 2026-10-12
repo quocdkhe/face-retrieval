@@ -6,7 +6,7 @@ Mục tiêu: lưu lại kết quả trích xuất khuôn mặt (Milestone 1) và
 image_url(s) → extract (Milestone 1) → lưu theo ẢNH vào Qdrant → UI xem/thêm/xoá
 ```
 
-Đơn vị lưu trữ là **ảnh**, không phải từng khuôn mặt: mỗi ảnh là 1 record trong Qdrant, chứa `bbox`/`det_score` của **toàn bộ** khuôn mặt tìm được trong ảnh đó. Ảnh không có khuôn mặt thì không lưu.
+Đơn vị lưu trữ là **ảnh**, không phải từng khuôn mặt: mỗi ảnh là 1 record trong Qdrant, chứa `bbox`/`det_score` của **toàn bộ** khuôn mặt tìm được trong ảnh đó. Ảnh không có khuôn mặt vẫn được lưu (`face_count: 0`, `faces: []`) — để biết ảnh đã được xử lý và không phải crawl/embed lại.
 
 ## Qdrant
 

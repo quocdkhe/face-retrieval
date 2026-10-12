@@ -136,21 +136,22 @@ def ingest_faces(payload: FaceIngestRequest) -> FaceIngestResponse:
             )
             continue
 
-        if faces:
-            try:
-                qdrant_service.ensure_collections(len(faces[0]["embedding"]))
-                qdrant_service.upsert_image(
-                    image_id=item.id,
-                    image_url=item.image_url,
-                    image_width=image_width,
-                    image_height=image_height,
-                    faces=faces,
-                )
-            except ValueError as exc:
-                results.append(
-                    FaceIngestItemResult(id=item.id, image_url=item.image_url, face_count=0, error=str(exc))
-                )
-                continue
+        # Lưu cả ảnh không có khuôn mặt (face_count=0) để biết ảnh đã được xử lý và
+        # không phải crawl/embed lại.
+        try:
+            qdrant_service.ensure_collections(len(faces[0]["embedding"]) if faces else None)
+            qdrant_service.upsert_image(
+                image_id=item.id,
+                image_url=item.image_url,
+                image_width=image_width,
+                image_height=image_height,
+                faces=faces,
+            )
+        except ValueError as exc:
+            results.append(
+                FaceIngestItemResult(id=item.id, image_url=item.image_url, face_count=0, error=str(exc))
+            )
+            continue
 
         results.append(FaceIngestItemResult(id=item.id, image_url=item.image_url, face_count=len(faces)))
         total_faces_added += len(faces)
