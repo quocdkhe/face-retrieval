@@ -34,33 +34,25 @@ class QdrantService:
     - `faces`: 1 point / khuôn mặt, vector là embedding thật để search theo sau,
       payload có `image_id` (khoá ngoại) + bbox/det_score.
     Cả 2 collection được tạo lazy ở lần ingest đầu tiên, dimension của `faces`
-    lấy đúng theo embedding thực tế lúc đó.
+    lấy từ model (`face_service.embedding_dim`), không phụ thuộc ảnh nào.
     """
 
     def __init__(self) -> None:
         self._client = QdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
-        self._images_ready = False
-        self._faces_ready = False
+        self._collections_ready = False
 
-    def ensure_collections(self, face_vector_size: int | None = None) -> None:
-        """Tạo `images` (luôn) và `faces` (chỉ khi biết `face_vector_size`). Ảnh không
-        có khuôn mặt vẫn được lưu, nên có thể gọi lúc chưa có embedding nào để lấy
-        dimension - khi đó `faces` được hoãn tới lần ingest có khuôn mặt đầu tiên."""
-        if not self._images_ready:
-            if not self._client.collection_exists(settings.QDRANT_IMAGES_COLLECTION_NAME):
-                logger.info(
-                    "Creating Qdrant collection '%s'", settings.QDRANT_IMAGES_COLLECTION_NAME
-                )
-                self._client.create_collection(
-                    collection_name=settings.QDRANT_IMAGES_COLLECTION_NAME,
-                    vectors_config=qmodels.VectorParams(
-                        size=_IMAGES_DUMMY_VECTOR_SIZE, distance=qmodels.Distance.COSINE
-                    ),
-                )
-            self._images_ready = True
-
-        if face_vector_size is None or self._faces_ready:
+    def ensure_collections(self, face_vector_size: int) -> None:
+        if self._collections_ready:
             return
+
+        if not self._client.collection_exists(settings.QDRANT_IMAGES_COLLECTION_NAME):
+            logger.info("Creating Qdrant collection '%s'", settings.QDRANT_IMAGES_COLLECTION_NAME)
+            self._client.create_collection(
+                collection_name=settings.QDRANT_IMAGES_COLLECTION_NAME,
+                vectors_config=qmodels.VectorParams(
+                    size=_IMAGES_DUMMY_VECTOR_SIZE, distance=qmodels.Distance.COSINE
+                ),
+            )
 
         if not self._client.collection_exists(settings.QDRANT_FACES_COLLECTION_NAME):
             logger.info(
@@ -80,7 +72,7 @@ class QdrantService:
                 field_schema=qmodels.PayloadSchemaType.KEYWORD,
             )
 
-        self._faces_ready = True
+        self._collections_ready = True
 
     def upsert_image(
         self,

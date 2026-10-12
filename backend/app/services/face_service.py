@@ -32,6 +32,16 @@ class FaceService:
             self._app = app
             logger.info("InsightFace model loaded.")
 
+    @property
+    def embedding_dim(self) -> int:
+        """Số chiều embedding do model recognition khai báo - không phụ thuộc ảnh nào."""
+        self.load_model()
+        assert self._app is not None
+        dim = self._app.models["recognition"].output_shape[1]
+        if not isinstance(dim, int):
+            raise RuntimeError(f"Không xác định được embedding dimension của model: {dim!r}")
+        return dim
+
     def extract_faces(self, image: np.ndarray) -> list[dict]:
         """Detect faces in a BGR OpenCV image and return bbox/score/embedding per face."""
         self.load_model()

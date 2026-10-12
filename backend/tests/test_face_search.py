@@ -38,7 +38,7 @@ def isolated_collections():
     originals = (settings.QDRANT_IMAGES_COLLECTION_NAME, settings.QDRANT_FACES_COLLECTION_NAME)
     settings.QDRANT_IMAGES_COLLECTION_NAME = f"test_images_{suffix}"
     settings.QDRANT_FACES_COLLECTION_NAME = f"test_faces_{suffix}"
-    qdrant_service._images_ready = qdrant_service._faces_ready = False
+    qdrant_service._collections_ready = False
     try:
         qdrant_service._client.get_collections()
     except Exception:
@@ -48,7 +48,7 @@ def isolated_collections():
     for name in (settings.QDRANT_IMAGES_COLLECTION_NAME, settings.QDRANT_FACES_COLLECTION_NAME):
         qdrant_service._client.delete_collection(name)
     settings.QDRANT_IMAGES_COLLECTION_NAME, settings.QDRANT_FACES_COLLECTION_NAME = originals
-    qdrant_service._images_ready = qdrant_service._faces_ready = False
+    qdrant_service._collections_ready = False
 
 
 @pytest.fixture(scope="module")

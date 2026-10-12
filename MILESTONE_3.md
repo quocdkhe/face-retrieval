@@ -87,5 +87,5 @@ Từ drawer chi tiết ảnh, click vào 1 khuôn mặt → FE gửi `face_id` �
   - Response: `query_face`, `items: [{score, matched_face_id, image: ImageRecord}]`, `total`. Sort theo score giảm dần, không phân trang. `404` nếu `face_id` không tồn tại/không phải UUID.
 - `StoredFaceInfo` thêm `face_id` (point id) — `GET /faces` giờ trả `face_id` cho từng khuôn mặt; dữ liệu cũ không cần migrate.
 - FE: `FaceBoundingBoxOverlay` hỗ trợ `onFaceClick` + `highlightedFaceIds`; `FaceSearchResultDrawer` là drawer lồng trong drawer chi tiết (crop khuôn mặt query, list ảnh kết quả, highlight đúng mặt khớp, tag % giống nhau; có loading/empty/error). Tầng 2 là điểm cuối.
-- Ingest lưu **cả ảnh không có khuôn mặt** (`face_count: 0`, không có point ở `faces`) — trước đây bị bỏ qua. `ensure_collections(face_vector_size=None)` chỉ tạo `images`; `faces` được tạo lazy ở lần ingest có khuôn mặt đầu tiên (cần biết dimension).
+- Ingest lưu **cả ảnh không có khuôn mặt** (`face_count: 0`, không có point ở `faces`) — trước đây bị bỏ qua. Dimension của `faces` lấy từ model (`face_service.embedding_dim`, đọc `output_shape` của model recognition), không phụ thuộc embedding của ảnh đầu tiên nên cả 2 collection tạo được kể cả khi ảnh đầu tiên không có mặt.
 - Test: `backend/tests/test_face_search.py` (Qdrant thật với collection tạm, tự skip nếu Qdrant không chạy).

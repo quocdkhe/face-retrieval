@@ -1,6 +1,8 @@
 # Milestone 4 — Image Search (SigLIP image embedding)
 
-> Trạng thái: **kế hoạch, chưa code.** Cần review các mục "Quyết định cần chốt" ở cuối trước khi triển khai.
+> Trạng thái: **kế hoạch, chưa code.** Đã chốt: làm cả ảnh → ảnh lẫn chữ → ảnh; xoá `images` cũ rồi sync lại (không backfill); dimension lấy từ model. Còn mở: chọn model SigLIP (xem cuối file).
+>
+> Đã kiểm tra: `torch` + `transformers` cài được trên Python 3.14 của venv (đã cài vào `.venv`, **chưa** ghi vào `requirements.txt`). **Chưa** kiểm tra: tải model SigLIP, chất lượng query tiếng Việt, tốc độ embed trên CPU — làm ở bước 0 bên dưới.
 
 Mục tiêu: ngoài tìm theo khuôn mặt (Milestone 3), cho phép tìm **ảnh** theo nội dung tổng thể — "ảnh nào trông giống ảnh này" và "ảnh nào khớp với mô tả này". Nền tảng: mỗi ảnh có thêm một vector embedding của **cả ảnh** sinh bởi SigLIP, lưu ngay trong bảng `images`.
 
@@ -24,16 +26,13 @@ Hiện collection `images` chỉ có 1 vector giả 1 chiều (`_IMAGES_DUMMY_VE
 | 3380193 | a.jpg | 1280 | 886 | 3 | 2026-10-09T… | embedding cả ảnh (L2-normalized) |
 
 - Collection `faces` **không đổi**.
-- Dimension lấy theo model thực tế lúc runtime (không hard-code), cùng nguyên tắc với `FACE_MODEL_NAME`.
+- Dimension lấy từ model lúc load (không hard-code, không đợi ảnh đầu tiên), cùng cách `face_service.embedding_dim` đang làm cho `faces`.
 - Distance: cosine (embedding đã L2-normalize).
 - Payload thêm `image_model` (tên model sinh embedding) để sau này đổi model biết vector nào cần re-embed.
 
 ### Vì sao phải tạo lại collection
 
-Qdrant không đổi được kích thước vector của collection đã tạo (1 → N chiều). Nên:
-
-1. Tạo `images` mới với vector thật, lazy ở lần ingest đầu tiên (giống `faces` hiện tại).
-2. Dữ liệu cũ: viết script `backend/scripts/reindex_images.py` — scroll `images` cũ (lấy `id` + payload) → tải lại ảnh → SigLIP embed → upsert vào collection mới (giữ nguyên `id`, `created_at`, không đụng `faces`). Với ảnh sync từ CMS, chạy lại "Đồng bộ từ CMS" cũng đủ vì ingest ghi đè theo `id`; script cần cho ảnh nhập tay (id là UUID).
+Qdrant không đổi được kích thước vector của collection đã tạo (1 → N chiều). Dữ liệu hiện tại không quan trọng nên **xoá collection `images` cũ rồi sync lại từ CMS** (ingest tạo lại collection với vector thật). Không cần script backfill. Collection `faces` không bị ảnh hưởng.
 
 ## Backend
 
@@ -49,7 +48,6 @@ Qdrant không đổi được kích thước vector của collection đã tạo 
 | `backend/app/api/routes/images.py` (mới) | Các endpoint search ảnh bên dưới |
 | `backend/app/schemas/image.py` (mới) | Request/response của search ảnh |
 | `backend/requirements.txt` | `torch` (CPU), `transformers`, `pillow` |
-| `backend/scripts/reindex_images.py` (mới) | Backfill vector cho ảnh đã lưu |
 
 ### Pipeline ingest
 
@@ -101,30 +99,34 @@ Có đủ trạng thái loading / empty / error như drawer search khuôn mặt.
   - `similar` loại ảnh nguồn, ảnh trùng nội dung xếp hạng đầu;
   - text search trả kết quả, query rỗng → 400;
   - ảnh `face_count: 0` vẫn tìm được;
-  - script reindex giữ nguyên `id`/`created_at`.
 - Test hiện có không đổi hành vi (face pipeline giữ nguyên).
 
 ## Các bước triển khai
 
+0. **Spike (chưa làm):** script rời trong scratchpad tải thử `siglip-base-patch16-224` và `siglip2-base-patch16-224`; đo thời gian load, thời gian embed 1 ảnh, dimension, và thử vài query tiếng Việt/tiếng Anh trên ảnh CMS thật để chọn model.
 1. `ImageEmbeddingService` + config + lifespan; thử embed ảnh fixture, kiểm dimension.
 2. Schema `images` vector thật + `upsert_image` nhận embedding; ingest gọi SigLIP.
 3. `search_images`, 3 endpoint + test.
-4. Script reindex + chạy trên dữ liệu dev.
+4. Xoá `images` cũ, sync lại từ CMS.
 5. FE: trang tìm kiếm, action "Tìm ảnh tương tự", component kết quả dùng chung.
 6. Cập nhật tài liệu / README (cài torch, dung lượng model).
 
 ## Rủi ro
 
-- **Môi trường Python:** venv đang dùng Python 3.14 — cần kiểm tra `torch` có wheel cho 3.14 trên macOS; nếu không, hạ Python (3.12) cho venv hoặc đổi sang chạy SigLIP qua ONNX Runtime (đã có sẵn cho InsightFace).
+- **Môi trường Python:** `torch`/`transformers` đã cài được trên Python 3.14 của venv, nhưng `transformers` 5.x còn mới — nếu spike gặp lỗi API (`get_image_features`, processor) thì ghim phiên bản; phương án dự phòng là ONNX Runtime (đã có cho InsightFace).
 - **Tài nguyên:** base model ~400MB tải lần đầu (`~/.cache/huggingface`), thêm RAM khi chạy cùng buffalo_l; model large (so400m) chính xác hơn nhưng nặng và chậm hơn nhiều trên CPU.
-- **Ngôn ngữ truy vấn:** SigLIP gốc huấn luyện chủ yếu bằng tiếng Anh — query tiếng Việt cho kết quả kém (xem câu hỏi 1).
-- **Mất dữ liệu `images` nếu quên backfill:** tạo collection mới trống; phải chạy reindex/sync lại, nên làm theo đúng thứ tự bước 4.
+- **Ngôn ngữ truy vấn:** SigLIP gốc huấn luyện chủ yếu bằng tiếng Anh — query tiếng Việt cho kết quả kém (xem câu hỏi mở 1).
 - **Quy mô:** `list_images` vẫn scroll toàn bộ `images` rồi sort app-side — không ảnh hưởng search nhưng sẽ chậm khi dữ liệu lớn (ngoài phạm vi milestone này).
 
-## Quyết định cần chốt
+## Quyết định
 
-1. **Model:** `google/siglip-base-patch16-224` (768 chiều, nhẹ, chủ yếu tiếng Anh) hay `google/siglip2-base-patch16-224` (SigLIP 2, đa ngôn ngữ — hợp query tiếng Việt hơn)? Đề xuất SigLIP 2 base; cần xác nhận bản đang tải được và chất lượng thực tế với query tiếng Việt trước khi chốt.
-2. **Phạm vi search:** làm cả text→ảnh và ảnh→ảnh, hay chỉ ảnh→ảnh trước? Đề xuất làm cả hai vì text encoder đi kèm model, chi phí thêm nhỏ.
-3. **Ảnh query ngoài database:** chỉ nhận URL (nhất quán với toàn hệ thống) hay thêm upload file (multipart)? Đề xuất URL trước, upload để sau.
-4. **Vector trong `images`:** 1 vector không tên (đơn giản, đề xuất) hay named vector để sau này thêm loại embedding khác?
-5. **Kết hợp face + image** (lọc ảnh theo người rồi xếp hạng theo nội dung) **không** nằm trong milestone này.
+**Đã chốt**
+- Làm cả ảnh → ảnh (`similar`, `search/image`) và chữ → ảnh (`search/text`) — dùng chung 1 vector ảnh, chỉ thêm text encoder.
+- Vector của `images` là vector SigLIP thật, thay vector giả; dimension lấy từ model lúc load.
+- Dữ liệu cũ không quan trọng: xoá `images`, sync lại từ CMS, không viết script backfill.
+- Face + image kết hợp (lọc theo người rồi xếp hạng theo nội dung) **không** nằm trong milestone này.
+
+**Còn mở**
+1. **Model:** `siglip-base-patch16-224` (768 chiều, chủ yếu tiếng Anh) hay `siglip2-base-patch16-224` (đa ngôn ngữ)? Chốt sau spike bước 0 bằng dữ liệu thật.
+2. **Ảnh query ngoài database:** chỉ nhận URL (nhất quán với toàn hệ thống) hay thêm upload file? Đề xuất URL trước.
+3. **Vector trong `images`:** 1 vector không tên (đơn giản, đề xuất) hay named vector để sau này thêm loại embedding khác?
