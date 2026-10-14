@@ -100,11 +100,15 @@ def test_search_finds_other_images_and_excludes_source(client, seeded):
     assert data["query_face"]["image_id"] == seeded["a"]
     image_ids = [item["image"]["id"] for item in data["items"]]
     assert seeded["a"] not in image_ids
-    assert image_ids == [seeded["b"]]  # đúng 1 lần, ảnh single_face không đủ giống
+    # Mỗi ảnh xuất hiện đúng 1 lần, ảnh trùng nội dung (b) xếp đầu. Không assert danh sách
+    # chỉ có [b]: mặt query là mặt đầu theo point id (uuid ngẫu nhiên mỗi lần chạy), và có
+    # mặt khớp >= min_score với ảnh single_face, nên ảnh đó có thể xuất hiện thêm.
+    assert image_ids[0] == seeded["b"]
+    assert len(image_ids) == len(set(image_ids))
     item = data["items"][0]
     assert item["score"] > 0.9
     assert item["matched_face_id"] in {f["face_id"] for f in item["image"]["faces"]}
-    assert data["total"] == 1
+    assert data["total"] == len(image_ids)
 
 
 def test_search_unknown_face_returns_404(client, seeded):
@@ -138,3 +142,66 @@ def test_ingest_saves_image_without_faces(client, isolated_collections, monkeypa
     record = next(i for i in items if i["id"] == image_id)
     assert record["face_count"] == 0
     assert record["faces"] == []
+
+
+def test_ingest_only_with_faces_skips_faceless_image(client, isolated_collections, monkeypatch):
+    import cv2
+    import numpy as np
+
+    ok, buf = cv2.imencode(".jpg", np.full((200, 200, 3), 127, dtype=np.uint8))
+    assert ok
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResponse(buf.tobytes()))
+    image_id = "55555555-0000-0000-0000-000000000005"
+
+    resp = client.post(
+        INGEST_URL,
+        json={
+            "items": [{"id": image_id, "image_url": "https://example.com/blank.jpg"}],
+            "only_with_faces": True,
+        },
+    )
+
+    assert resp.status_code == 200
+    result = resp.json()["results"][0]
+    assert result["skipped"] is True
+    assert result["error"] is None
+    assert result["face_count"] == 0
+    stored_ids = {i["id"] for i in client.get(LIST_URL, params={"limit": 100}).json()["items"]}
+    assert image_id not in stored_ids
+
+
+def test_resync_keeps_face_ids_stable(client, seeded):
+    """Sync lại cùng ảnh (cùng id) → face_id giữ nguyên, không sinh face trùng."""
+    before = {f["face_id"] for f in _faces_of(client, seeded["a"])}
+    multi = (FIXTURES_DIR / "multi_face.jpg").read_bytes()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(httpx, "get", lambda *a, **k: _FakeResponse(multi))
+        resp = client.post(
+            INGEST_URL,
+            json={"items": [{"id": seeded["a"], "image_url": "https://example.com/a.jpg"}]},
+        )
+    assert resp.status_code == 200
+    assert resp.json()["results"][0]["error"] is None
+
+    after = {f["face_id"] for f in _faces_of(client, seeded["a"])}
+    assert after == before
+
+
+def test_resync_removes_faces_no_longer_in_image(client, seeded):
+    """Ảnh đổi nội dung (chỉ còn 1 mặt) → face cũ không còn trong ảnh bị xoá."""
+    image_id = "44444444-0000-0000-0000-000000000004"
+    multi = (FIXTURES_DIR / "multi_face.jpg").read_bytes()
+    single = (FIXTURES_DIR / "single_face.png").read_bytes()
+
+    def ingest(content: bytes) -> None:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(httpx, "get", lambda *a, **k: _FakeResponse(content))
+            r = client.post(
+                INGEST_URL, json={"items": [{"id": image_id, "image_url": "https://example.com/x.jpg"}]}
+            )
+        assert r.json()["results"][0]["error"] is None
+
+    ingest(multi)
+    assert len(_faces_of(client, image_id)) > 1
+    ingest(single)
+    assert len(_faces_of(client, image_id)) == 1

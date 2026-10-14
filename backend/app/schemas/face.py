@@ -28,6 +28,11 @@ class FaceIngestItem(BaseModel):
 
 class FaceIngestRequest(BaseModel):
     items: list[FaceIngestItem] = Field(..., min_length=1, description="Danh sách ảnh (id + url) cần trích xuất và lưu")
+    only_with_faces: bool = Field(
+        default=False,
+        description="True: ảnh không có khuôn mặt bị bỏ qua (không lưu, trả `skipped=true`). "
+        "False (mặc định): vẫn lưu ảnh face_count=0 để biết ảnh đã được xử lý.",
+    )
 
 
 class FaceIngestItemResult(BaseModel):
@@ -35,6 +40,7 @@ class FaceIngestItemResult(BaseModel):
     image_url: str
     face_count: int
     error: str | None = None
+    skipped: bool = Field(default=False, description="Ảnh không có khuôn mặt và bị bỏ qua do only_with_faces")
 
 
 class FaceIngestResponse(BaseModel):

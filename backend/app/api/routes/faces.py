@@ -136,7 +136,13 @@ def ingest_faces(payload: FaceIngestRequest) -> FaceIngestResponse:
             )
             continue
 
-        # Lưu cả ảnh không có khuôn mặt (face_count=0) để biết ảnh đã được xử lý và
+        if payload.only_with_faces and not faces:
+            results.append(
+                FaceIngestItemResult(id=item.id, image_url=item.image_url, face_count=0, skipped=True)
+            )
+            continue
+
+        # Mặc định lưu cả ảnh không có khuôn mặt (face_count=0) để biết ảnh đã được xử lý và
         # không phải crawl/embed lại.
         try:
             qdrant_service.ensure_collections(face_service.embedding_dim)

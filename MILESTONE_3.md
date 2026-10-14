@@ -89,3 +89,13 @@ Từ drawer chi tiết ảnh, click vào 1 khuôn mặt → FE gửi `face_id` �
 - FE: `FaceBoundingBoxOverlay` hỗ trợ `onFaceClick` + `highlightedFaceIds`; `FaceSearchResultDrawer` là drawer lồng trong drawer chi tiết (crop khuôn mặt query, list ảnh kết quả, highlight đúng mặt khớp, tag % giống nhau; có loading/empty/error). Tầng 2 là điểm cuối.
 - Ingest lưu **cả ảnh không có khuôn mặt** (`face_count: 0`, không có point ở `faces`) — trước đây bị bỏ qua. Dimension của `faces` lấy từ model (`face_service.embedding_dim`, đọc `output_shape` của model recognition), không phụ thuộc embedding của ảnh đầu tiên nên cả 2 collection tạo được kể cả khi ảnh đầu tiên không có mặt.
 - Test: `backend/tests/test_face_search.py` (Qdrant thật với collection tạm, tự skip nếu Qdrant không chạy).
+
+## Việc đã triển khai (face id ổn định khi sync lại)
+
+Trước đây mỗi lần ingest xoá hết face của ảnh rồi ghi lại với `uuid4()`, nên sync lại cùng `id` làm mọi `face_id` đổi — mọi tham chiếu tới `face_id` (mẫu của person ở Milestone 4.1) sẽ gãy.
+
+- `face_id` giờ là `uuid5(image_id + bbox làm tròn px)`: cùng ảnh + cùng detector → cùng id, upsert ghi đè tại chỗ.
+- `upsert_image` ghi face mới **trước**, rồi mới xoá face của ảnh không còn trong tập mới (trước đây xoá trước rồi ghi — dừng giữa chừng là mất face).
+- Ảnh đổi nội dung/bbox → id đổi, face cũ bị xoá. Đúng chủ đích: face đó không còn là cùng một khuôn mặt.
+- Face đã ingest trước thay đổi này vẫn mang id ngẫu nhiên cho đến lần sync lại kế tiếp (không cần migrate).
+- Test: `test_resync_keeps_face_ids_stable`, `test_resync_removes_faces_no_longer_in_image`.

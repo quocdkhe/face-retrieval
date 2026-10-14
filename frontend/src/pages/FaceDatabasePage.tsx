@@ -1,11 +1,9 @@
-import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import {
   App,
   Button,
   Card,
   Drawer,
   Flex,
-  Form,
   Image,
   Input,
   Modal,
@@ -31,7 +29,7 @@ export default function FaceDatabasePage() {
   const [searchFaceId, setSearchFaceId] = useState<string | null>(null)
   const [ingestOpen, setIngestOpen] = useState(false)
   const [cmsSyncOpen, setCmsSyncOpen] = useState(false)
-  const [form] = Form.useForm<{ image_urls: string[] }>()
+  const [urlText, setUrlText] = useState('')
 
   const { data, isLoading } = useImageList({
     limit: page.pageSize,
@@ -70,11 +68,24 @@ export default function FaceDatabasePage() {
     })
   }
 
-  const handleIngestSubmit = async () => {
-    const values = await form.validateFields()
-    const image_urls = values.image_urls.map((u) => u.trim()).filter(Boolean)
+  const parsedUrls = Array.from(
+    new Set(
+      urlText
+        .split(/\r?\n/)
+        .map((u) => u.trim())
+        .filter(Boolean),
+    ),
+  )
+
+  const handleIngestSubmit = () => {
+    const image_urls = parsedUrls
     if (image_urls.length === 0) {
       message.warning('Nhập ít nhất 1 URL ảnh')
+      return
+    }
+    const invalid = image_urls.filter((u) => !/^https?:\/\//i.test(u))
+    if (invalid.length > 0) {
+      message.error(`URL không hợp lệ (cần bắt đầu bằng http/https): ${invalid[0]}`)
       return
     }
     const items = image_urls.map((image_url) => ({ id: crypto.randomUUID(), image_url }))
@@ -83,7 +94,7 @@ export default function FaceDatabasePage() {
       {
         onSuccess: (result) => {
           setIngestOpen(false)
-          form.resetFields()
+          setUrlText('')
           showIngestResult(result)
         },
         onError: (err) => {
@@ -169,7 +180,7 @@ export default function FaceDatabasePage() {
           <Button
             type="primary"
             onClick={() => {
-              form.resetFields()
+              setUrlText('')
               setIngestOpen(true)
             }}
           >
@@ -262,39 +273,16 @@ export default function FaceDatabasePage() {
         destroyOnHidden
       >
         <Typography.Paragraph type="secondary">
-          Nhập danh sách URL ảnh. Mỗi ảnh sẽ được trích xuất toàn bộ khuôn mặt và lưu vào Qdrant theo ảnh.
+          Dán danh sách URL ảnh, mỗi URL một dòng. Mỗi ảnh sẽ được trích xuất toàn bộ khuôn mặt và lưu vào Qdrant theo ảnh.
         </Typography.Paragraph>
-        <Form form={form} layout="vertical" initialValues={{ image_urls: [''] }}>
-          <Form.List name="image_urls">
-            {(fields, { add, remove }) => (
-              <Flex vertical gap={8}>
-                {fields.map((field, index) => (
-                  <Form.Item
-                    {...field}
-                    key={field.key}
-                    rules={[{ required: true, whitespace: true, message: 'Nhập URL ảnh hoặc xoá dòng này' }]}
-                    style={{ marginBottom: 0 }}
-                  >
-                    <Input
-                      placeholder="https://example.com/photo.jpg"
-                      addonAfter={
-                        fields.length > 1 ? (
-                          <MinusCircleOutlined
-                            onClick={() => remove(index)}
-                            style={{ color: 'var(--ant-color-error)' }}
-                          />
-                        ) : null
-                      }
-                    />
-                  </Form.Item>
-                ))}
-                <Button type="dashed" icon={<PlusOutlined />} onClick={() => add()} block>
-                  Thêm URL
-                </Button>
-              </Flex>
-            )}
-          </Form.List>
-        </Form>
+        <Input.TextArea
+          value={urlText}
+          onChange={(e) => setUrlText(e.target.value)}
+          placeholder={'https://example.com/a.jpg\nhttps://example.com/b.jpg'}
+          rows={10}
+          autoFocus
+        />
+        <Typography.Text type="secondary">{parsedUrls.length} URL</Typography.Text>
       </Modal>
 
       <CmsSyncModal open={cmsSyncOpen} onClose={() => setCmsSyncOpen(false)} />

@@ -24,6 +24,8 @@ export interface FaceIngestItem {
 
 export interface FaceIngestRequest {
   items: FaceIngestItem[]
+  /** true: ảnh không có khuôn mặt bị bỏ qua (không lưu, trả `skipped`). */
+  only_with_faces?: boolean
 }
 
 export interface FaceIngestItemResult {
@@ -31,6 +33,7 @@ export interface FaceIngestItemResult {
   image_url: string
   face_count: number
   error: string | null
+  skipped?: boolean
 }
 
 export interface FaceIngestResponse {

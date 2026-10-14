@@ -1,6 +1,6 @@
 import logging
 from datetime import UTC, datetime
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
@@ -26,6 +26,14 @@ def _to_point_id(image_id: str) -> int | str:
             f"id '{image_id}' không hợp lệ cho Qdrant, cần là số hoặc UUID"
         ) from exc
     return image_id
+
+
+def _face_point_id(image_id: str, bbox: list[float]) -> str:
+    """Id xác định cho 1 khuôn mặt: cùng ảnh + cùng bbox (làm tròn px) → cùng id.
+    Nhờ vậy sync lại ảnh cùng `image_id` ghi đè đúng face cũ thay vì sinh id mới, và
+    các tham chiếu tới `face_id` (vd: mẫu của person) không bị gãy."""
+    x1, y1, x2, y2 = (round(v) for v in bbox)
+    return str(uuid5(NAMESPACE_URL, f"face:{image_id}:{x1}:{y1}:{x2}:{y2}"))
 
 
 class QdrantService:
@@ -86,11 +94,10 @@ class QdrantService:
         sinh id nữa, để sync lại nhiều lần với cùng id không tạo record trùng.
         Ghi 1 point ở `images` (metadata, upsert = overwrite) + 1 point/khuôn mặt ở
         `faces` (vector embedding thật + bbox/det_score, kèm image_id để join
-        app-side). Face points của lần sync trước (nếu có) bị xoá trước khi ghi lại,
-        vì point id của chúng là ngẫu nhiên nên không thể "overwrite" theo image_id."""
+        app-side). Id face xác định theo (image_id, bbox) nên face không đổi được
+        ghi đè tại chỗ; ghi face mới TRƯỚC rồi mới xoá face cũ không còn trong ảnh,
+        để dừng giữa chừng không làm mất face đã có."""
         point_id = _to_point_id(image_id)
-
-        self._delete_faces_by_image_id(image_id)
 
         image_payload = {
             "image_url": image_url,
@@ -108,33 +115,37 @@ class QdrantService:
             ],
         )
 
-        if faces:
-            face_points = [
-                qmodels.PointStruct(
-                    id=str(uuid4()),
-                    vector=face["embedding"],
-                    payload={
-                        "image_id": image_id,
-                        "bbox": face["bbox"],
-                        "det_score": face["det_score"],
-                    },
-                )
-                for face in faces
-            ]
+        face_points = [
+            qmodels.PointStruct(
+                id=_face_point_id(image_id, face["bbox"]),
+                vector=face["embedding"],
+                payload={
+                    "image_id": image_id,
+                    "bbox": face["bbox"],
+                    "det_score": face["det_score"],
+                },
+            )
+            for face in faces
+        ]
+        if face_points:
             self._client.upsert(
                 collection_name=settings.QDRANT_FACES_COLLECTION_NAME, points=face_points
             )
+        self._delete_faces_by_image_id(image_id, keep_ids=[str(p.id) for p in face_points])
 
         return image_id
 
-    def _delete_faces_by_image_id(self, image_id: str) -> None:
+    def _delete_faces_by_image_id(self, image_id: str, keep_ids: list[str] | None = None) -> None:
+        """Xoá face của ảnh, trừ các id trong `keep_ids`."""
         if not self._client.collection_exists(settings.QDRANT_FACES_COLLECTION_NAME):
             return
+        must_not = [qmodels.HasIdCondition(has_id=keep_ids)] if keep_ids else None
         self._client.delete(
             collection_name=settings.QDRANT_FACES_COLLECTION_NAME,
             points_selector=qmodels.FilterSelector(
                 filter=qmodels.Filter(
-                    must=[qmodels.FieldCondition(key="image_id", match=qmodels.MatchValue(value=image_id))]
+                    must=[qmodels.FieldCondition(key="image_id", match=qmodels.MatchValue(value=image_id))],
+                    must_not=must_not,
                 )
             ),
         )
